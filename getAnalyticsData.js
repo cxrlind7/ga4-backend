@@ -1,8 +1,13 @@
 import { BetaAnalyticsDataClient } from '@google-analytics/data'
 
+if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+  console.error("❌ Variable de entorno GOOGLE_APPLICATION_CREDENTIALS_JSON no está definida.");
+  process.exit(1);
+}
+
 const analyticsDataClient = new BetaAnalyticsDataClient({
-  keyFilename: '../src/composables/analytics/crianzasana-c33aa-694d0980b439.json',
-})
+  credentials: JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON),
+});
 
 const PROPERTY_ID = '483239794'
 
