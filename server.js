@@ -6,7 +6,7 @@ import {
   getRoutePageViews,
   getPersonPageViews,
   getBlogEventBreakdown,
-} from '../server/getAnalyticsData.js'
+} from './getAnalyticsData.js'
 
 const app = express()
 app.use(cors())
