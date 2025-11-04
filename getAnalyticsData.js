@@ -1,5 +1,5 @@
 import { BetaAnalyticsDataClient } from '@google-analytics/data'
-//comment
+//commentt
 if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
   console.error("❌ Variable de entorno GOOGLE_APPLICATION_CREDENTIALS_JSON no está definida.");
   process.exit(1);
