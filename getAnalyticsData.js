@@ -1,9 +1,21 @@
 import { BetaAnalyticsDataClient } from '@google-analytics/data'
 
-// Asegúrate de que la ruta a tus credenciales sea correcta en tu servidor
+// ==========================================
+// CONFIGURACIÓN DE CREDENCIALES (MODO SEGURO)
+// ==========================================
+// Verificamos que la variable de entorno con el JSON de credenciales exista en Railway.
+if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+  console.error(
+    '❌ ERROR FATAL: La variable de entorno GOOGLE_APPLICATION_CREDENTIALS_JSON no está definida.'
+  )
+  console.error(
+    'Asegúrate de añadir el contenido de tu archivo JSON de credenciales en las variables de entorno de Railway.'
+  )
+  process.exit(1)
+}
+
 const analyticsDataClient = new BetaAnalyticsDataClient({
-  // Usa './' para indicar "en esta misma carpeta"
-  keyFilename: './crianzasana-c33aa-694d0980b439.json',
+  credentials: JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON),
 })
 
 const PROPERTY_ID = '483239794'
@@ -11,21 +23,27 @@ const PROPERTY_ID = '483239794'
 // Helper para manejar rangos de fecha por defecto
 const defaultRange = { startDate: '30daysAgo', endDate: 'today' }
 
-export async function getBlogPageViews(dateRange = defaultRange) {
-  console.log(`📊 Fetching Blog Views for range: ${dateRange.startDate} to ${dateRange.endDate}`)
+// ==========================================
+// FUNCIONES DE OBTENCIÓN DE DATOS
+// ==========================================
 
-  // 1️⃣ Consulta Principal: Métricas clave para el rango seleccionado
+export async function getBlogPageViews(dateRange = defaultRange) {
+  console.log(
+    `📊 Fetching Blog Views for range: ${dateRange.startDate} to ${dateRange.endDate}`
+  )
+
+  // 1️⃣ Consulta Principal: Métricas clave
   const [pageViewsResponse] = await analyticsDataClient.runReport({
     property: `properties/${PROPERTY_ID}`,
     dateRanges: [dateRange],
     dimensions: [{ name: 'pagePath' }],
     metrics: [
-      { name: 'screenPageViews' }, // [0] Vistas
-      { name: 'activeUsers' }, // [1] Usuarios
-      { name: 'screenPageViewsPerUser' }, // [2] Vistas/Usuario
-      { name: 'userEngagementDuration' }, // [3] Tiempo total (segundos)
+      { name: 'screenPageViews' }, // [0] Vistas totales
+      { name: 'activeUsers' }, // [1] Usuarios únicos
+      { name: 'screenPageViewsPerUser' }, // [2] Vistas promedio por usuario
+      { name: 'userEngagementDuration' }, // [3] Tiempo total de interacción (segundos sumados de todos)
       { name: 'eventCount' }, // [4] Total Eventos
-      { name: 'engagementRate' }, // [5] Tasa de interacción (Nuevo!)
+      { name: 'engagementRate' }, // [5] Tasa de interacción
     ],
     dimensionFilter: {
       filter: {
@@ -35,7 +53,7 @@ export async function getBlogPageViews(dateRange = defaultRange) {
     },
   })
 
-  // 2️⃣ Consulta Secundaria: Eventos 'share_blog' para el MISMO rango
+  // 2️⃣ Consulta Secundaria: Eventos 'share_blog'
   const [shareEventsResponse] = await analyticsDataClient.runReport({
     property: `properties/${PROPERTY_ID}`,
     dateRanges: [dateRange],
@@ -61,9 +79,7 @@ export async function getBlogPageViews(dateRange = defaultRange) {
     },
   })
 
-  // 3️⃣ Consulta Terciaria: Datos diarios para la gráfica de línea (Sparkline)
-  // Esta SIEMPRE debe ser los últimos 7 días para que la gráfica pequeña se vea consistente,
-  // independientemente del filtro principal.
+  // 3️⃣ Consulta Terciaria: Datos diarios (últimos 7 días fijos para sparkline)
   const [dailyResponse] = await analyticsDataClient.runReport({
     property: `properties/${PROPERTY_ID}`,
     dateRanges: [{ startDate: '7daysAgo', endDate: 'today' }],
@@ -79,27 +95,38 @@ export async function getBlogPageViews(dateRange = defaultRange) {
 
   const viewsByPath = {}
 
-  // Procesar métricas principales
+  // --- PROCESAMIENTO DE DATOS ---
+
+  // 1. Procesar métricas principales (CORREGIDO)
   pageViewsResponse.rows?.forEach((row) => {
     const path = row.dimensionValues[0].value
-    // Validar que sea un blog real y no una ruta de prueba
+    // Validar que sea un blog real y no una ruta de prueba o raíz
     if (path.startsWith('/blog/') && path.split('/').length > 2) {
-      const values = row.metricValues.map((v) => parseFloat(v.value))
+      // Extraemos los valores usando nombres claros para no confundir índices
+      const visits = parseFloat(row.metricValues[0].value)
+      const users = parseFloat(row.metricValues[1].value)
+      const viewsPerUser = parseFloat(row.metricValues[2].value)
+      const totalEngagementTimeSeconds = parseFloat(row.metricValues[3].value)
+      const totalEvents = parseFloat(row.metricValues[4].value)
+      const engagementRateRaw = parseFloat(row.metricValues[5].value)
+
       viewsByPath[path] = {
-        visits: values[0],
-        users: values[1],
-        viewsPerUser: parseFloat(values[2]).toFixed(1),
-        // Calculamos el tiempo promedio por sesión en segundos
-        avgEngagementTime: values[1] > 0 ? Math.round(values[3] / values[1]) : 0,
-        totalEvents: values[4],
-        engagementRate: (parseFloat(values[5]) * 100).toFixed(0), // Convertir a porcentaje
-        shares: 0, // Inicializar
-        daily: {}, // Inicializar
+        visits: visits,
+        users: users,
+        viewsPerUser: viewsPerUser.toFixed(1),
+        // ✅ CÁLCULO CORREGIDO: Tiempo promedio por VISITA (sesión).
+        // Dividimos el tiempo total entre el número de visitas.
+        avgEngagementTime:
+          visits > 0 ? Math.round(totalEngagementTimeSeconds / visits) : 0,
+        totalEvents: totalEvents,
+        engagementRate: (engagementRateRaw * 100).toFixed(0), // Convertir a porcentaje
+        shares: 0, // Se llenará después
+        daily: {}, // Se llenará después
       }
     }
   })
 
-  // Procesar shares
+  // 2. Procesar shares
   shareEventsResponse.rows?.forEach((row) => {
     const path = row.dimensionValues[0].value
     if (viewsByPath[path]) {
@@ -107,7 +134,7 @@ export async function getBlogPageViews(dateRange = defaultRange) {
     }
   })
 
-  // Procesar daily (últimos 7 días fijos)
+  // 3. Procesar daily (últimos 7 días)
   dailyResponse.rows?.forEach((row) => {
     const path = row.dimensionValues[0].value
     const date = row.dimensionValues[1].value
@@ -126,7 +153,10 @@ export async function getHomepageDailyViews(dateRange = defaultRange) {
     dimensions: [{ name: 'date' }],
     metrics: [{ name: 'screenPageViews' }],
     dimensionFilter: {
-      filter: { fieldName: 'pagePath', stringFilter: { matchType: 'EXACT', value: '/' } },
+      filter: {
+        fieldName: 'pagePath',
+        stringFilter: { matchType: 'EXACT', value: '/' },
+      },
     },
   })
 
@@ -151,7 +181,10 @@ export async function getRoutePageViews(paths = [], dateRange = defaultRange) {
     dimensionFilter: {
       orGroup: {
         expressions: validPaths.map((path) => ({
-          filter: { fieldName: 'pagePath', stringFilter: { matchType: 'EXACT', value: path } },
+          filter: {
+            fieldName: 'pagePath',
+            stringFilter: { matchType: 'EXACT', value: path },
+          },
         })),
       },
     },
@@ -174,7 +207,10 @@ export async function getPersonPageViews(dateRange = defaultRange) {
     dimensionFilter: {
       orGroup: {
         expressions: personPaths.map((path) => ({
-          filter: { fieldName: 'pagePath', stringFilter: { matchType: 'EXACT', value: path } },
+          filter: {
+            fieldName: 'pagePath',
+            stringFilter: { matchType: 'EXACT', value: path },
+          },
         })),
       },
     },
@@ -188,6 +224,7 @@ export async function getPersonPageViews(dateRange = defaultRange) {
 }
 
 export async function getBlogEventBreakdown() {
+  // Usamos un rango amplio fijo para el breakdown histórico
   const [response] = await analyticsDataClient.runReport({
     property: `properties/${PROPERTY_ID}`,
     dateRanges: [{ startDate: '2020-08-15', endDate: 'today' }],
@@ -210,4 +247,3 @@ export async function getBlogEventBreakdown() {
 
   return breakdown
 }
-
