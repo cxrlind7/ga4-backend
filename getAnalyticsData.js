@@ -2,7 +2,8 @@ import { BetaAnalyticsDataClient } from '@google-analytics/data'
 
 // Asegúrate de que la ruta a tus credenciales sea correcta en tu servidor
 const analyticsDataClient = new BetaAnalyticsDataClient({
-  keyFilename: '../src/composables/analytics/crianzasana-c33aa-694d0980b439.json',
+  // Usa './' para indicar "en esta misma carpeta"
+  keyFilename: './crianzasana-c33aa-694d0980b439.json',
 })
 
 const PROPERTY_ID = '483239794'
@@ -209,3 +210,4 @@ export async function getBlogEventBreakdown() {
 
   return breakdown
 }
+
