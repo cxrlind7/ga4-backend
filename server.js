@@ -6,16 +6,26 @@ import {
   getRoutePageViews,
   getPersonPageViews,
   getBlogEventBreakdown,
-} from './getAnalyticsData.js'
+} from '../server/getAnalyticsData.js'
 
 const app = express()
 app.use(cors())
+
+// Middleware para extraer fechas del query string
+const getDates = (req) => {
+  const { startDate, endDate } = req.query
+  // Si no se proveen, usar '30daysAgo' como default
+  return startDate && endDate
+    ? { startDate, endDate }
+    : { startDate: '30daysAgo', endDate: 'today' }
+}
+
 app.get('/api/routes-views', async (req, res) => {
   try {
     const paths = ['/about', '/blog', '/programs', '/login', '/live', '/gallery']
     console.log('Paths:', paths)
-    const data = await getRoutePageViews(paths)
-    // const data=await
+    const dateRange = getDates(req)
+    const data = await getRoutePageViews(paths, dateRange)
     res.json(data)
   } catch (error) {
     console.error('Error al obtener vistas de rutas:', error)
@@ -25,7 +35,8 @@ app.get('/api/routes-views', async (req, res) => {
 
 app.get('/api/blog-views', async (req, res) => {
   try {
-    const data = await getBlogPageViews()
+    const dateRange = getDates(req)
+    const data = await getBlogPageViews(dateRange)
     res.json(data)
   } catch (error) {
     console.error('Error al obtener vistas del blog:', error)
@@ -35,7 +46,8 @@ app.get('/api/blog-views', async (req, res) => {
 
 app.get('/api/person-views', async (req, res) => {
   try {
-    const data = await getPersonPageViews()
+    const dateRange = getDates(req)
+    const data = await getPersonPageViews(dateRange)
     // Convertir a arreglo ordenado por vistas descendentes
     const sorted = Object.entries(data)
       .sort(([, a], [, b]) => b - a)
@@ -49,7 +61,8 @@ app.get('/api/person-views', async (req, res) => {
 
 app.get('/api/homepage-views', async (req, res) => {
   try {
-    const data = await getHomepageDailyViews()
+    const dateRange = getDates(req)
+    const data = await getHomepageDailyViews(dateRange)
     res.json(data)
   } catch (error) {
     console.error('Error al obtener vistas de la página principal:', error)
