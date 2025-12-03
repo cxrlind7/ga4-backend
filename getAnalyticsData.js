@@ -1,5 +1,4 @@
 import { BetaAnalyticsDataClient } from '@google-analytics/data'
-
 //commentt
 if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
   console.error('❌ Variable de entorno GOOGLE_APPLICATION_CREDENTIALS_JSON no está definida.')
@@ -12,232 +11,203 @@ const analyticsDataClient = new BetaAnalyticsDataClient({
 
 const PROPERTY_ID = '483239794'
 
-// ============================================
-// 1. Obtener Vistas de Blogs Individuales
-// ============================================
-export async function getBlogPageViews(startDate = '30daysAgo', endDate = 'today') {
-  try {
-    // 1️⃣ Consulta Principal: Métricas clave para el rango seleccionado
-    const [pageViewsResponse] = await analyticsDataClient.runReport({
-      property: `properties/${PROPERTY_ID}`,
-      dateRanges: [{ startDate, endDate }],
-      dimensions: [{ name: 'pagePath' }],
-      metrics: [
-        { name: 'screenPageViews' }, // [0] Vistas
-        { name: 'activeUsers' }, // [1] Usuarios
-        { name: 'screenPageViewsPerUser' }, // [2] Vistas/Usuario
-        { name: 'userEngagementDuration' }, // [3] Tiempo total (segundos)
-        { name: 'eventCount' }, // [4] Total Eventos
-        { name: 'engagementRate' }, // [5] Tasa de interacción
-      ],
-      dimensionFilter: {
-        filter: {
-          fieldName: 'pagePath',
-          stringFilter: { matchType: 'BEGINS_WITH', value: '/blog/' },
+export async function getBlogPageViews() {
+  // 1️⃣ Consulta: visitas totales y tiempo de lectura promedio
+  const [pageViewsResponse] = await analyticsDataClient.runReport({
+    property: `properties/${PROPERTY_ID}`,
+    dateRanges: [{ startDate: '2020-08-15', endDate: 'today' }],
+    dimensions: [{ name: 'pagePath' }],
+    metrics: [
+      { name: 'screenPageViews' }, // ✅ Vistas
+      { name: 'activeUsers' }, // ✅ Usuarios activos
+      { name: 'screenPageViewsPerUser' }, // ✅ Vistas por usuario
+      { name: 'userEngagementDuration' }, // ✅ Tiempo total de interacción
+      { name: 'eventCount' }, // ✅ Número de eventos
+    ],
+  })
+
+  // 2️⃣ Consulta: solo eventos 'share_blog'
+  const [shareEventsResponse] = await analyticsDataClient.runReport({
+    property: `properties/${PROPERTY_ID}`,
+    dateRanges: [{ startDate: '2015-08-15', endDate: 'today' }],
+    dimensions: [{ name: 'pagePath' }],
+    metrics: [{ name: 'eventCount' }],
+    dimensionFilter: {
+      filter: {
+        fieldName: 'eventName',
+        stringFilter: {
+          matchType: 'EXACT',
+          value: 'share_blog',
         },
       },
-    })
+    },
+  })
 
-    // 2️⃣ Consulta Secundaria: Eventos 'share_blog' para el MISMO rango
-    const [shareEventsResponse] = await analyticsDataClient.runReport({
-      property: `properties/${PROPERTY_ID}`,
-      dateRanges: [{ startDate, endDate }],
-      dimensions: [{ name: 'pagePath' }],
-      metrics: [{ name: 'eventCount' }],
-      dimensionFilter: {
-        andGroup: {
-          expressions: [
-            {
-              filter: {
-                fieldName: 'pagePath',
-                stringFilter: { matchType: 'BEGINS_WITH', value: '/blog/' },
-              },
-            },
-            {
-              filter: {
-                fieldName: 'eventName',
-                stringFilter: { matchType: 'EXACT', value: 'share_blog' },
-              },
-            },
-          ],
-        },
-      },
-    })
+  // 3️⃣ Consulta: visitas diarias por fecha
+  const [dailyResponse] = await analyticsDataClient.runReport({
+    property: `properties/${PROPERTY_ID}`,
+    dateRanges: [{ startDate: '7daysAgo', endDate: 'today' }],
+    dimensions: [{ name: 'pagePath' }, { name: 'date' }],
+    metrics: [{ name: 'screenPageViews' }],
+  })
 
-    // 3️⃣ Consulta Terciaria: Datos diarios para la gráfica de línea (Sparkline)
-    // Esta SIEMPRE debe ser los últimos 7 días para que la gráfica pequeña se vea consistente
-    const [dailyResponse] = await analyticsDataClient.runReport({
-      property: `properties/${PROPERTY_ID}`,
-      dateRanges: [{ startDate: '7daysAgo', endDate: 'today' }],
-      dimensions: [{ name: 'pagePath' }, { name: 'date' }],
-      metrics: [{ name: 'screenPageViews' }],
-      dimensionFilter: {
-        filter: {
-          fieldName: 'pagePath',
-          stringFilter: { matchType: 'BEGINS_WITH', value: '/blog/' },
-        },
-      },
-    })
+  const viewsByPath = {}
 
-    const viewsByPath = {}
+  pageViewsResponse.rows?.forEach((row) => {
+    const path = row.dimensionValues[0].value
+    const values = row.metricValues.map((v) => parseFloat(v.value))
 
-    // Procesar métricas principales
-    pageViewsResponse.rows?.forEach((row) => {
-      const path = row.dimensionValues[0].value
-      if (path.startsWith('/blog/') && path.split('/').length > 2) {
-        const values = row.metricValues.map((v) => parseFloat(v.value))
+    if (path.startsWith('/blog/')) {
+      viewsByPath[path] = {
+        visits: values[0],
+        users: values[1],
+        viewsPerUser: values[2].toFixed(2),
+        avgEngagementPerUser: values[1] > 0 ? Math.round(values[3] / values[1]) : 0,
+        avgEngagementPerVisit: values[0] > 0 ? Math.round(values[3] / values[0]) : 0,
+        readTime: values[0] > 0 ? Math.round(values[3] / values[0] / 1000) : 0, // segundos
+        totalEvents: values[4],
+        daily: {},
+      }
+    }
+  })
+
+  // Procesar eventos 'share_blog'
+  shareEventsResponse.rows?.forEach((row) => {
+    const path = row.dimensionValues[0].value
+    const shares = parseInt(row.metricValues[0].value)
+
+    if (viewsByPath[path]) {
+      viewsByPath[path].shares = shares
+      const v = viewsByPath[path].visits
+      viewsByPath[path].interactionRate = v > 0 ? Math.round((shares / v) * 100) : 0
+    }
+  })
+
+  // Procesar visitas diarias
+  dailyResponse.rows?.forEach((row) => {
+    const path = row.dimensionValues[0].value
+    const date = row.dimensionValues[1].value
+    const count = parseInt(row.metricValues[0].value)
+
+    if (path.startsWith('/blog/')) {
+      if (!viewsByPath[path]) {
         viewsByPath[path] = {
-          visits: values[0],
-          users: values[1],
-          viewsPerUser: values[2].toFixed(1),
-          avgEngagementTime: values[1] > 0 ? Math.round(values[3] / values[1]) : 0,
-          totalEvents: values[4],
-          engagementRate: (values[5] * 100).toFixed(0),
+          visits: 0,
+          averageReadTime: 0,
           shares: 0,
+          interactionRate: 0,
           daily: {},
         }
       }
-    })
 
-    // Procesar shares
-    shareEventsResponse.rows?.forEach((row) => {
-      const path = row.dimensionValues[0].value
-      if (viewsByPath[path]) {
-        viewsByPath[path].shares = parseInt(row.metricValues[0].value)
+      if (!viewsByPath[path].daily) {
+        viewsByPath[path].daily = {}
       }
-    })
 
-    // Procesar daily
-    dailyResponse.rows?.forEach((row) => {
-      const path = row.dimensionValues[0].value
-      const date = row.dimensionValues[1].value
-      if (viewsByPath[path]) {
-        viewsByPath[path].daily[date] = parseInt(row.metricValues[0].value)
-      }
-    })
-
-    return viewsByPath
-  } catch (error) {
-    console.error('Error en getBlogPageViews:', error)
-    throw error
-  }
-}
-
-// ============================================
-// 2. Obtener Vistas de la Homepage (Tendencia)
-// ============================================
-export async function getHomepageViewsDaily(startDate = '30daysAgo', endDate = 'today') {
-  try {
-    const [response] = await analyticsDataClient.runReport({
-      property: `properties/${PROPERTY_ID}`,
-      dateRanges: [{ startDate, endDate }],
-      dimensions: [{ name: 'date' }],
-      metrics: [{ name: 'screenPageViews' }],
-      dimensionFilter: {
-        filter: {
-          fieldName: 'pagePath',
-          stringFilter: { matchType: 'EXACT', value: '/' },
-        },
-      },
-      orderBys: [{ dimension: { dimensionName: 'date' } }],
-    })
-
-    const dailyViews = {}
-    response.rows?.forEach((row) => {
-      const date = row.dimensionValues[0].value
-      const views = parseInt(row.metricValues[0].value, 10)
-      dailyViews[date] = views
-    })
-
-    return dailyViews
-  } catch (error) {
-    console.error('Error en getHomepageViewsDaily:', error)
-    throw error
-  }
-}
-
-// ============================================
-// 3. Obtener Vistas de Rutas Principales (Secciones)
-// ============================================
-export async function getRoutesViews(startDate = '30daysAgo', endDate = 'today') {
-  try {
-    const [response] = await analyticsDataClient.runReport({
-      property: `properties/${PROPERTY_ID}`,
-      dateRanges: [{ startDate, endDate }],
-      dimensions: [{ name: 'pagePath' }],
-      metrics: [{ name: 'screenPageViews' }],
-    })
-
-    const routeViews = {}
-    response.rows?.forEach((row) => {
-      const path = row.dimensionValues[0].value
-      const views = parseInt(row.metricValues[0].value, 10)
-      // Filtramos para que no sean blogs ni perfiles, solo secciones principales
-      // Ajusta según tus rutas reales. El usuario pidió esto.
-      if (
-        !path.startsWith('/blog/') &&
-        !path.startsWith('/person/') &&
-        path !== '/' &&
-        views > 0
-      ) {
-        routeViews[path] = views
-      }
-    })
-
-    return routeViews
-  } catch (error) {
-    console.error('Error en getRoutesViews:', error)
-    throw error
-  }
-}
-
-// ============================================
-// 4. Obtener Vistas de Perfiles de Especialistas
-// ============================================
-export async function getPersonViews(startDate = '30daysAgo', endDate = 'today', personId = null) {
-  try {
-    let filterConfig = {
-      fieldName: 'pagePath',
-      stringFilter: {
-        matchType: 'CONTAINS',
-        value: '/person/',
-      },
+      viewsByPath[path].daily[date] = count
     }
+  })
 
-    if (personId) {
-      filterConfig = {
+  return viewsByPath
+}
+
+export async function getHomepageDailyViews() {
+  const [response] = await analyticsDataClient.runReport({
+    property: `properties/${PROPERTY_ID}`,
+    dateRanges: [{ startDate: '30daysAgo', endDate: 'today' }],
+    dimensions: [{ name: 'date' }],
+    metrics: [{ name: 'screenPageViews' }],
+    dimensionFilter: {
+      filter: {
         fieldName: 'pagePath',
-        stringFilter: {
-          matchType: 'ENDS_WITH',
-          value: `/person/${personId}`,
-        },
-      }
-    }
-
-    const [response] = await analyticsDataClient.runReport({
-      property: `properties/${PROPERTY_ID}`,
-      dateRanges: [{ startDate, endDate }],
-      dimensions: [{ name: 'pagePath' }],
-      metrics: [{ name: 'screenPageViews' }],
-      dimensionFilter: {
-        filter: filterConfig,
+        stringFilter: { matchType: 'EXACT', value: '/' },
       },
-    })
+    },
+  })
 
-    const personViews = []
-    response.rows?.forEach((row) => {
-      const path = row.dimensionValues[0].value
-      const views = parseInt(row.metricValues[0].value, 10)
-      if (path.includes('/person/') && views > 0) {
-        personViews.push({ path, views })
-      }
-    })
+  const data = {}
+  response.rows?.forEach((row) => {
+    const date = row.dimensionValues[0].value
+    const count = parseInt(row.metricValues[0].value)
+    data[date] = count
+  })
 
-    return personViews
-  } catch (error) {
-    console.error('Error en getPersonViews:', error)
-    throw error
+  return data
+}
+
+export async function getRoutePageViews(paths = []) {
+  const validPaths = Array.isArray(paths)
+    ? paths.filter((p) => typeof p === 'string' && p.trim() !== '')
+    : []
+
+  if (!validPaths.length) {
+    console.warn('No valid paths provided')
+    return {}
   }
+
+  const [response] = await analyticsDataClient.runReport({
+    property: `properties/${PROPERTY_ID}`,
+    dateRanges: [{ startDate: '30daysAgo', endDate: 'today' }],
+    dimensions: [{ name: 'pagePath' }],
+    metrics: [{ name: 'screenPageViews' }],
+    dimensionFilter: {
+      orGroup: {
+        // <-- Cambio clave aquí: quita el objeto 'filter' que lo envolvía
+        expressions: validPaths.map((path) => ({
+          filter: {
+            // <-- Cada expresión ahora debe tener su propio objeto 'filter'
+            fieldName: 'pagePath',
+            stringFilter: {
+              matchType: 'EXACT',
+              value: path,
+            },
+          },
+        })),
+      },
+    },
+  })
+
+  const data = {}
+  response.rows?.forEach((row) => {
+    const path = row.dimensionValues[0].value
+    const count = parseInt(row.metricValues[0].value)
+    data[path] = count
+  })
+
+  return data
+}
+
+export async function getPersonPageViews() {
+  const personPaths = Array.from({ length: 9 }, (_, i) => `/person/${i + 1}`)
+  console.log('Person Paths:', personPaths)
+  const [response] = await analyticsDataClient.runReport({
+    property: `properties/${PROPERTY_ID}`,
+    dateRanges: [{ startDate: '30daysAgo', endDate: 'today' }],
+    dimensions: [{ name: 'pagePath' }],
+    metrics: [{ name: 'screenPageViews' }],
+    dimensionFilter: {
+      orGroup: {
+        expressions: personPaths.map((path) => ({
+          filter: {
+            fieldName: 'pagePath',
+            stringFilter: {
+              matchType: 'EXACT',
+              value: path,
+            },
+          },
+        })),
+      },
+    },
+  })
+
+  const data = {}
+  response.rows?.forEach((row) => {
+    const path = row.dimensionValues[0].value
+    const count = parseInt(row.metricValues[0].value)
+    data[path] = count
+  })
+
+  return data
 }
 
 export async function getBlogEventBreakdown() {
