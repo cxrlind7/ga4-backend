@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+// ✅ CORRECCIÓN IMPORTANTE: Ruta relativa correcta para archivos en la misma carpeta
 import {
   getBlogPageViews,
   getHomepageDailyViews,
@@ -9,9 +10,13 @@ import {
 } from './getAnalyticsData.js'
 
 const app = express()
+
+// Habilitar CORS para todas las rutas.
+// NOTA PARA PRODUCCIÓN: Si sigues teniendo problemas de CORS, podrías necesitar
+// especificar tu dominio de frontend aquí: app.use(cors({ origin: 'https://tu-frontend.com' }))
 app.use(cors())
 
-// Middleware para extraer fechas del query string
+// Middleware helper para extraer fechas del query string de la URL
 const getDates = (req) => {
   const { startDate, endDate } = req.query
   // Si no se proveen, usar '30daysAgo' como default
@@ -20,10 +25,12 @@ const getDates = (req) => {
     : { startDate: '30daysAgo', endDate: 'today' }
 }
 
+// --- RUTAS DE LA API ---
+
 app.get('/api/routes-views', async (req, res) => {
   try {
+    // Rutas estáticas principales a monitorear
     const paths = ['/about', '/blog', '/programs', '/login', '/live', '/gallery']
-    console.log('Paths:', paths)
     const dateRange = getDates(req)
     const data = await getRoutePageViews(paths, dateRange)
     res.json(data)
@@ -40,6 +47,8 @@ app.get('/api/blog-views', async (req, res) => {
     res.json(data)
   } catch (error) {
     console.error('Error al obtener vistas del blog:', error)
+    // Es útil ver el error completo en los logs de Railway
+    console.error(error.stack)
     res.status(500).json({ error: 'Error interno del servidor' })
   }
 })
@@ -48,7 +57,7 @@ app.get('/api/person-views', async (req, res) => {
   try {
     const dateRange = getDates(req)
     const data = await getPersonPageViews(dateRange)
-    // Convertir a arreglo ordenado por vistas descendentes
+    // Convertir a arreglo ordenado por vistas descendentes para el frontend
     const sorted = Object.entries(data)
       .sort(([, a], [, b]) => b - a)
       .map(([path, views]) => ({ path, views }))
@@ -72,6 +81,7 @@ app.get('/api/homepage-views', async (req, res) => {
 
 app.get('/api/blog-events-breakdown', async (req, res) => {
   try {
+    // Esta función usa un rango histórico fijo, no depende del query string
     const data = await getBlogEventBreakdown()
     res.json(data)
   } catch (error) {
@@ -80,8 +90,8 @@ app.get('/api/blog-events-breakdown', async (req, res) => {
   }
 })
 
-const PORT = 3001
+// Puerto para Railway (ellos asignan PORT automáticamente) o 3001 para local
+const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`)
+  console.log(`Servidor corriendo en el puerto ${PORT}`)
 })
-
