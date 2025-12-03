@@ -10,11 +10,14 @@ import {
 } from './getAnalyticsData.js'
 
 const app = express()
-
-// Habilitar CORS para todas las rutas.
-// NOTA PARA PRODUCCIÓN: Si sigues teniendo problemas de CORS, podrías necesitar
-// especificar tu dominio de frontend aquí: app.use(cors({ origin: 'https://tu-frontend.com' }))
 app.use(cors())
+
+// --- AGREGA ESTO AQUÍ ---
+// Ruta raíz para el Health Check de Railway.
+// Esto le dice a Railway que el servidor está vivo.
+app.get('/', (req, res) => {
+  res.status(200).send('🤖 GA4 Backend is running OK!')
+})
 
 // Middleware helper para extraer fechas del query string de la URL
 const getDates = (req) => {
@@ -95,3 +98,4 @@ const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en el puerto ${PORT}`)
 })
+
