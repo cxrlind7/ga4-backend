@@ -15,7 +15,7 @@ import {
   getPersonPageViews,
   getBlogEventBreakdown,
   getLocationViews,
-} from './utils/getAnalyticsData.js'
+} from './getAnalyticsData.js'
 import compression from 'compression'
 // --- CONFIGURACIÓN DE RUTAS Y DIRECTORIOS ---
 const __filename = fileURLToPath(import.meta.url)
