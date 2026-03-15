@@ -23,7 +23,7 @@ const __dirname = path.dirname(__filename)
 
 console.log('🚀 INICIO DEL SERVIDOR UNIFICADO')
 
-// --- MANEJO DE ERRORES GLOBALES ---
+// --- MANEJO DE ERRORES GLOBALES ----
 process.on('uncaughtException', (err) => {
   console.error('🔥 Excepción no capturada:', err)
 })
